@@ -35,7 +35,7 @@ resource "aws_route_table_association" "lab" {
 }
 
 resource "aws_security_group" "perfil" {
-  for_each = toset(["puppet-server", "ansible-controller", "gerenciado"])
+  for_each = toset(["puppet-server", "gerenciado"])
 
   name_prefix = "bacen-iac-aws-${each.key}-"
   vpc_id      = aws_vpc.lab.id
@@ -49,14 +49,6 @@ resource "aws_vpc_security_group_ingress_rule" "instrutor" {
   ip_protocol       = "tcp"
   from_port         = 22
   to_port           = 22
-}
-
-resource "aws_vpc_security_group_ingress_rule" "ansible" {
-  security_group_id            = aws_security_group.perfil["gerenciado"].id
-  referenced_security_group_id = aws_security_group.perfil["ansible-controller"].id
-  ip_protocol                  = "tcp"
-  from_port                    = 22
-  to_port                      = 22
 }
 
 resource "aws_vpc_security_group_ingress_rule" "puppet" {

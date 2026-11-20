@@ -1,0 +1,32 @@
+#cloud-config
+fqdn: ${server_name}
+prefer_fqdn_over_hostname: true
+manage_etc_hosts: localhost
+
+packages:
+  - puppetserver
+
+write_files:
+  - path: /etc/puppet/code/environments/production/manifests/site.pp
+    permissions: "0644"
+    content: ${jsonencode(manifest)}
+
+runcmd:
+  - set -e
+  - [
+      puppet,
+      module,
+      install,
+      puppetlabs-stdlib,
+      --version,
+      "9.7.0",
+      --environment,
+      production,
+    ]
+  - [
+      puppet,
+      parser,
+      validate,
+      /etc/puppet/code/environments/production/manifests/site.pp,
+    ]
+  - [systemctl, enable, --now, puppetserver]

@@ -1,6 +1,6 @@
 **terraform.tfstate
 **.terraform.lock.hcl
-**terraform.tfvars.example
+terraform.tfvars.example
 **.terraform.lock.hcl
 **.terraform.lock.hcl
 **linux_amd64

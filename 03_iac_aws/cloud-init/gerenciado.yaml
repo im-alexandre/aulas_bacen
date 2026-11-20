@@ -1,0 +1,18 @@
+#cloud-config
+packages:
+  - puppet-agent
+
+write_files:
+  - path: /etc/hosts
+    append: true
+    content: |
+      ${server_ip} ${server_name}
+  - path: /etc/puppet/puppet.conf
+    defer: true
+    content: |
+      [main]
+      server = ${server_name}
+      certname = ${certname}
+
+runcmd:
+  - [systemctl, mask, --now, puppet.service]

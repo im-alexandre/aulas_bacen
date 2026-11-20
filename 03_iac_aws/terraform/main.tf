@@ -1,10 +1,12 @@
 locals {
+  puppet_server_name = "puppet-server.bacen.test"
+  puppet_server_ip   = cidrhost(aws_subnet.lab.cidr_block, 10)
+
   maquinas = {
-    puppet-server      = { perfil = "puppet-server", tipo = "t3.medium" }
-    ansible-controller = { perfil = "ansible-controller", tipo = "t3.micro" }
-    gerenciado-01      = { perfil = "gerenciado", tipo = "t3.micro" }
-    gerenciado-02      = { perfil = "gerenciado", tipo = "t3.micro" }
-    gerenciado-03      = { perfil = "gerenciado", tipo = "t3.micro" }
+    puppet-server = { perfil = "puppet-server", tipo = "t3.medium" }
+    gerenciado-01 = { perfil = "gerenciado", tipo = "t3.micro" }
+    gerenciado-02 = { perfil = "gerenciado", tipo = "t3.micro" }
+    gerenciado-03 = { perfil = "gerenciado", tipo = "t3.micro" }
   }
 }
 
@@ -17,7 +19,14 @@ resource "aws_instance" "lab" {
   vpc_security_group_ids      = [aws_security_group.perfil[each.value.perfil].id]
   associate_public_ip_address = true
   key_name                    = aws_key_pair.lab.key_name
-  user_data                   = file("${path.module}/../bootstrap/${each.value.perfil}.sh")
+  private_ip                  = each.key == "puppet-server" ? local.puppet_server_ip : null
+  user_data_replace_on_change = true
+  user_data = replace(templatefile("${path.module}/../cloud-init/${each.value.perfil}.yaml", {
+    server_name = local.puppet_server_name
+    server_ip   = local.puppet_server_ip
+    certname    = "${each.key}.bacen.test"
+    manifest    = file("${path.module}/../puppet/site.pp")
+  }), "\r\n", "\n")
 
   metadata_options {
     http_tokens = "required"

@@ -3,4 +3,3 @@
 *.tfstate.*
 *.tfplan
 terraform.tfvars
-inventory.ini
