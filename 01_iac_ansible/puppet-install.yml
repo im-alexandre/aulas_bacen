@@ -1,0 +1,33 @@
+---
+- name: Instalar Puppet
+  hosts: databases
+  become: true
+
+  tasks:
+    - name: Atualizar cache do APT
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instalar Puppet
+      ansible.builtin.apt:
+        name: puppet
+        state: present
+
+    - name: Verificar versão instalada
+      ansible.builtin.command:
+        cmd: puppet --version
+      register: puppet_version
+      changed_when: false
+
+    - name: Exibir versão
+      ansible.builtin.debug:
+        var: puppet_version
+
+    - name: Copiar manifesto Puppet
+      ansible.builtin.copy:
+        src: ./files/nginx.pp
+        dest: /home/ubuntu/nginx.pp
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"

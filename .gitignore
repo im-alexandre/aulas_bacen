@@ -1,0 +1,10 @@
+**terraform.tfstate
+**.terraform.lock.hcl
+**terraform.tfvars.example
+**.terraform.lock.hcl
+**.terraform.lock.hcl
+**linux_amd64
+**terraform.tfstate.backup
+**ubuntu-24.04-base.qcow2
+**linux_amd64
+**k3s.yaml
