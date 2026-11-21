@@ -29,4 +29,5 @@ runcmd:
       validate,
       /etc/puppet/code/environments/production/manifests/site.pp,
     ]
+  - [puppet, config, set, ca_server, "${puppet_server_name}", --section, server]
   - [systemctl, enable, --now, puppetserver]

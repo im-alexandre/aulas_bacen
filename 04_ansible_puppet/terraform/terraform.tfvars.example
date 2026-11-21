@@ -1,0 +1,10 @@
+# Copie para terraform.tfvars e preencha os dados da sua assinatura.
+azure_subscription_id = "00000000-0000-0000-0000-000000000000"
+azure_location        = "eastus"
+vm_size               = "Standard_F1als_v7"
+ubuntu_image_version  = "SUBSTITUA-PELA-VERSAO-DO-UBUNTU"
+instructor_cidr       = "203.0.113.10/32"
+ssh_public_key_path   = "~/.ssh/bacen-iac-azure.pub"
+
+# Na expansão, mude esta linha para 8 e use o mesmo diretório Terraform.
+quantidade_nos = 5

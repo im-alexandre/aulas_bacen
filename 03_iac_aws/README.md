@@ -1,59 +1,100 @@
 # Prática na AWS com Terraform, Puppet e Forge
 
-**Aula 45, Parte 2 · meta provisória de 17 min · sem slides**
+**Aula 45, Parte 2 · 17 minutos previstos · demonstração sem slides**
 
-O Terraform cria quatro EC2 Ubuntu Server 24.04 LTS. O cloud-init prepara o
-`puppet-server` (t3.medium) e três agentes, de `gerenciado-01` a
-`gerenciado-03` (t3.micro). Depois de conectar os agentes e aplicar o catálogo,
-altere o título da página do Nginx em um nó e mostre o Puppet restaurando
-o texto declarado.
+A aula começa com quatro máquinas vazias na AWS e termina com uma mudança manual sendo corrigida pelo Puppet. O aluno deve conseguir explicar **quem cria a infraestrutura**, **quem prepara cada máquina no primeiro boot** e **quem restaura a configuração quando ela se desvia**.
 
-- [Terraform](terraform/main.tf) cria as máquinas e injeta a configuração de
-  inicialização. O SSH público fica restrito ao IPv4 do instrutor. Os agentes
-  acessam o servidor por IP privado, na porta 8140.
-- [Cloud-init do servidor](cloud-init/puppet-server.yaml) instala o Puppet Server,
-  baixa `puppetlabs/stdlib` do Forge na versão **9.7.0** e publica o manifesto
-  no ambiente `production`.
-- [Cloud-init do agente](cloud-init/gerenciado.yaml) instala o Puppet Agent,
-  configura o nome do servidor e do certificado e bloqueia a execução periódica.
-- [Manifesto](puppet/site.pp) declara o pacote e o serviço Nginx e usa
-  `file_line`, recurso do módulo `stdlib`, para manter a linha do título no HTML.
+> **Abertura sugerida.** “Vamos subir um servidor Puppet e três máquinas gerenciadas. Quando as três estiverem com a página do Nginx funcionando, vou alterar o título em apenas uma delas. Quero que você preveja o que vai acontecer quando o agente rodar de novo.”
 
-## 1. Provisionar
+## Mapa da demonstração
 
-Execute no PowerShell a partir desta pasta. Use uma conta de laboratório
-autorizada, com Terraform, AWS CLI, OpenSSH e um perfil AWS autenticado.
-Gere a chave apenas se ela ainda não existir.
+| Etapa | Quem executa | O que fica pronto |
+|---|---|---|
+| Provisionar | Terraform, a partir do computador do instrutor | A rede, as regras de acesso e quatro EC2 Ubuntu 24.04 LTS |
+| Preparar as máquinas | Cloud-init, dentro de cada EC2 | Puppet Server de um lado e Puppet Agent nos três nós |
+| Definir o estado desejado | O instrutor, no manifesto `site.pp` | Pacote Nginx instalado, serviço ativo e título da página definido |
+| Compilar e aplicar | Puppet Server compila o catálogo. Cada agente aplica o catálogo no próprio nó | O Nginx serve a página com o título declarado |
+| Corrigir o desvio | O agente de `gerenciado-01`, ao rodar outra vez | O título volta ao valor declarado no manifesto |
+
+O servidor é a EC2 `puppet-server` (`t3.medium`). As outras três, `gerenciado-01`, `gerenciado-02` e `gerenciado-03`, são `t3.micro`. Você entra nas quatro por **SSH** (porta 22, pelo IP público, com acesso restrito ao seu IPv4). Os agentes falam com o **Puppet Server** pela rede privada (porta 8140). Para ler a página, use **HTTP local** dentro de cada agente (`curl http://localhost/`).
+
+### Divisão sugerida para a gravação
+
+| Tempo | Mostre na tela | Pergunta que a etapa responde |
+|---:|---|---|
+| 3 min | Mapa de máquinas no HCL, resumo do plano e início do `apply` | O que o Terraform vai criar? |
+| 3 min | Os dois YAMLs, o módulo instalado e as solicitações de certificado | Como cada VM fica pronta e como o servidor identifica os agentes? |
+| 4 min | `site.pp`, primeira aplicação e resposta HTTP nos agentes | Como o código no servidor vira configuração no nó? |
+| 5 min | Título original, alteração manual, correção e reaplicação sem mudanças | O que acontece quando o estado real diverge do desejado? |
+| 2 min | Conclusão e resumo do plano de destruição | O que cada ferramenta fez e como encerramos o laboratório? |
+
+Faça um ensaio antes da tomada. O tempo acima é para o vídeo. Use um corte entre o `apply` e o fim do cloud-init e outro, se preciso, enquanto o Puppet instala o Nginx. Este pacote teve validação local do Terraform e dos YAMLs, com plano simulado. O ensaio ponta a ponta nas EC2 ainda está pendente.
+
+## Antes de gravar
+
+Execute os blocos de PowerShell no seu computador, **a partir da pasta deste README**. Os blocos de Bash rodam na EC2 indicada. Tenha Terraform 1.10 ou superior dentro da série 1.x, AWS CLI, OpenSSH e um perfil autenticado de uma conta autorizada para o laboratório. As quatro EC2, os volumes e os IPv4 públicos podem gerar cobrança durante o ensaio.
 
 ```powershell
-ssh-keygen -t ed25519 -f "$HOME/.ssh/bacen-iac-aws"
 $env:AWS_PROFILE = 'SEU_PERFIL_DE_LABORATORIO'
 $regiao = 'us-east-1'
+$chave = "$HOME/.ssh/bacen-iac-aws"
+
+# Se o perfil usa SSO, autentique antes das consultas.
+# aws sso login --profile $env:AWS_PROFILE
+
+if (-not (Test-Path -LiteralPath $chave)) {
+    ssh-keygen -t ed25519 -f $chave
+}
+if (-not (Test-Path -LiteralPath 'terraform/terraform.tfvars')) {
+    Copy-Item terraform/terraform.tfvars.example terraform/terraform.tfvars
+}
+
 aws sts get-caller-identity --query Account --output text
 aws ssm get-parameter --region $regiao --name '/aws/service/canonical/ubuntu/server/noble/stable/current/amd64/hvm/ebs-gp3/ami-id' --query Parameter.Value --output text
-Copy-Item terraform/terraform.tfvars.example terraform/terraform.tfvars -Confirm
 ```
 
-Use a região da aula em `$regiao` e no `terraform.tfvars`. Preencha também a
-conta, a AMI retornada e o seu IPv4 público com sufixo `/32`. Se o perfil usa
-SSO, autentique com `aws sso login --profile $env:AWS_PROFILE` antes das consultas.
+Preencha `terraform/terraform.tfvars` com a mesma região de `$regiao`, o ID da conta retornado, a AMI oficial do Ubuntu 24.04 LTS retornada e seu IPv4 público seguido de `/32`. O provedor confere a conta contra `expected_account_id`. A AWS recebe a chave pública `bacen-iac-aws.pub`. O cliente SSH usa a chave privada que fica no seu computador. Se escolher outro caminho de chave, ajuste `ssh_public_key_path` e `$chave`. [Canonical · AMI do Ubuntu na AWS](https://ubuntu.com/aws/docs/aws-how-to/instances/launch-ubuntu-ec2-instance/)
+
+## 1. Mostrar o plano e provisionar
+
+Abra [terraform/main.tf](terraform/main.tf). Mostre o mapa `maquinas` e como `for_each` cria uma instância por entrada. Em `user_data`, a função `templatefile` preenche o YAML correspondente ao perfil com os dados do laboratório. O Puppet Server recebe o IP privado `10.42.1.10`. Os três agentes recebem esse endereço e um `certname` distinto.
+
+Em [terraform/rede.tf](terraform/rede.tf), mostre a regra de SSH do instrutor e a regra que permite aos agentes chegar ao servidor na porta 8140. A saída para a internet permite baixar os pacotes do Ubuntu e o módulo do Forge.
 
 ```powershell
 terraform -chdir=terraform init
 terraform -chdir=terraform validate
 terraform -chdir=terraform plan -out=lab.tfplan
+```
+
+**O que conferir no plano.** Procure as quatro instâncias nomeadas, a VPC, a sub-rede, a rota e os grupos de segurança. Depois de revisar, aplique o plano salvo.
+
+```powershell
 terraform -chdir=terraform apply lab.tfplan
 terraform -chdir=terraform output maquinas
 ```
 
-Confira as quatro EC2 e a rede no plano. Após o `apply`, aguarde o
-`cloud-init` em cada máquina. Use o IP público da saída e a chave local com
-`ssh -i "$HOME/.ssh/bacen-iac-aws" ubuntu@IP_PUBLICO`.
+**O que dizer.** “O Terraform terminou de criar as máquinas. Agora o Ubuntu ainda pode estar rodando o cloud-init. Vamos conferir o primeiro boot antes de testar o Puppet.”
 
-## 2. Conectar os agentes e aplicar o catálogo
+Abra quatro terminais SSH. Identifique cada aba com o nome da máquina. Em cada PowerShell local, use a chave e o IP público correspondente da saída.
 
-No **servidor**, confira a inicialização, o serviço, o certificado e o
-módulo baixado.
+```powershell
+ssh -i "$HOME/.ssh/bacen-iac-aws" ubuntu@IP_PUBLICO
+```
+
+## 2. Explicar o cloud-init e conectar os agentes
+
+No [YAML do servidor](cloud-init/puppet-server.yaml), mostre três blocos.
+
+- `packages` instala o `puppetserver` pelo repositório do Ubuntu.
+- `write_files` grava o `site.pp` no ambiente `production`.
+- `runcmd` instala `puppetlabs/stdlib` **9.7.0**, verifica a sintaxe do manifesto e habilita o serviço Puppet Server. No comando, `puppetlabs-stdlib` é o nome aceito pela CLI para o módulo listado no Forge como `puppetlabs/stdlib`.
+
+No [YAML do agente](cloud-init/gerenciado.yaml), mostre a instalação de `puppet-agent`, a entrada em `/etc/hosts` que resolve `puppet-server.bacen.test` pelo IP privado e os campos `server` e `certname` no `puppet.conf`. O serviço periódico fica bloqueado para você decidir quando o agente roda na demonstração. [Documentação do cloud-init](https://docs.cloud-init.io/en/latest/reference/modules.html)
+
+> **Ligação com o slide 7.** “Forge é o catálogo de onde vem o módulo. Aqui, o cloud-init usa `puppet module install` para instalar uma versão fixa no servidor. Em um fluxo com Git, o r10k usa o `Puppetfile` para instalar os módulos e publica o código do ambiente. O Code Manager automatiza essa publicação no Puppet Enterprise, usando r10k.” [Puppet Forge](https://forge.puppet.com/modules/puppetlabs/stdlib) · [r10k](https://help.puppet.com/pe/current/topics/set-up-r10k.htm) · [Code Manager](https://help.puppet.com/pe/current/topics/code_mgr.htm)
+
+**No servidor Puppet**, aguarde o cloud-init e confirme que o serviço está ativo e que o módulo aparece na versão esperada.
 
 ```bash
 sudo cloud-init status --wait
@@ -62,17 +103,16 @@ sudo puppet config print certname --section server
 sudo puppet module list --environment production
 ```
 
-O certificado do servidor deve usar `puppet-server.bacen.test`. Em **cada
-agente**, aguarde o cloud-init e solicite o certificado. Na primeira execução,
-a mensagem de certificado pendente é esperada.
+A saída deve mostrar status `done`, serviço `active`, nome `puppet-server.bacen.test` e módulo `puppetlabs-stdlib` na versão `9.7.0`.
+
+**Em cada um dos três agentes**, aguarde o cloud-init e envie a solicitação de certificado. `--waitforcert 0` devolve o terminal sem esperar pela assinatura. Uma mensagem indicando que o certificado ainda não foi assinado é esperada neste momento.
 
 ```bash
 sudo cloud-init status --wait
 sudo puppet ssl bootstrap --waitforcert 0
 ```
 
-Volte ao **servidor**. Confira os nomes na lista de solicitações e assine os
-três certificados do laboratório.
+Com as solicitações enviadas, volte ao **servidor**. Confira os três nomes em `ca list` e assine os certificados correspondentes.
 
 ```bash
 sudo puppetserver ca list
@@ -81,39 +121,67 @@ sudo puppetserver ca sign --certname gerenciado-02.bacen.test
 sudo puppetserver ca sign --certname gerenciado-03.bacen.test
 ```
 
-Em **cada agente**, aplique o catálogo e confira a página. O Puppet Server
-compila o catálogo a partir do manifesto. O agente recebe o catálogo e
-aplica o estado no próprio nó.
+**O que dizer.** “Cada nó se apresenta com seu próprio nome e pede um certificado. A autoridade certificadora do Puppet assina a solicitação. O agente então consegue se autenticar e pedir seu catálogo.” [Conexão do agente e assinatura do certificado](https://help.puppet.com/core/current/Content/PuppetCore/agent_primary_server_connections.htm)
+
+## 3. Ler o manifesto e aplicar o primeiro catálogo
+
+Abra [puppet/site.pp](puppet/site.pp). Leia o bloco `node` com os três nomes e siga os recursos na ordem indicada pelas dependências.
+
+| Recurso | Estado declarado | Dependência |
+|---|---|---|
+| `package` | Nginx instalado | — |
+| `service` | Nginx em execução e habilitado no boot | Pacote Nginx |
+| `file` | `/var/www/html/index.html` existe | Pacote Nginx |
+| `file_line` | O arquivo contém `<h1>Servidor gerenciado pelo Puppet</h1>` | Arquivo HTML |
+
+**Distinção para explicar em voz alta.** O **manifesto** é o código que escrevemos. O **catálogo** é o conjunto de recursos e relações que o servidor compila para um nó. O **agente** pede esse catálogo, compara o que ele declara com o estado da máquina e aplica os ajustes localmente. O Nginx entra nessa etapa pelo recurso `package`.
+
+Detenha-se no `file_line`, o recurso que veio do módulo do Forge. `path` escolhe o arquivo, `line` define o conteúdo desejado e `match` identifica a linha do título pelo padrão `^<h1>.*</h1>$`. Se a página estiver vazia, o recurso acrescenta o título. Se a linha tiver o mesmo formato e outro texto, o recurso a substitui pelo valor declarado. [Implementação de `file_line` no módulo stdlib 9.7.0](https://github.com/puppetlabs/puppetlabs-stdlib/blob/v9.7.0/lib/puppet/type/file_line.rb)
+
+**Em cada agente**, execute uma vez e confira o título. Você pode mostrar a aplicação completa no primeiro e conferir rapidamente o resultado nos outros dois.
 
 ```bash
 sudo puppet agent --test
+echo "Código do Puppet: $?"
 curl -fsS http://localhost/
 ```
 
-O título esperado é `Servidor gerenciado pelo Puppet`. Em caso de falha de
-inicialização, confira `sudo tail -n 80 /var/log/cloud-init-output.log`.
+Espere ver `<h1>Servidor gerenciado pelo Puppet</h1>` nos três. Em uma VM recém-criada, o código **2** é esperado se o Puppet instalou ou alterou recursos. O modo `--test` executa uma vez em primeiro plano **e aplica mudanças**. O código **0** indica execução bem-sucedida sem mudanças. Os códigos **1**, **4** e **6** pedem investigação antes de seguir. [Manual de `puppet agent`](https://help.puppet.com/core/current/Content/PuppetCore/Markdown/agent.htm)
 
-## 3. Demonstrar o desvio em um único nó
+## 4. Provocar e corrigir o desvio
 
-Em **gerenciado-01**, troque a linha do título e leia a página antes da
-reaplicação. Os dois outros agentes conservam o título definido no manifesto.
+Execute esta etapa **só em `gerenciado-01`**. Primeiro, mostre o título original. Depois, troque a linha manualmente e leia a página de novo.
 
 ```bash
+curl -fsS http://localhost/
 sudo sed -i 's|^<h1>.*</h1>$|<h1>Desvio manual</h1>|' /var/www/html/index.html
 curl -fsS http://localhost/
-sudo puppet agent --test
-curl -fsS http://localhost/
-sudo puppet agent --test
 ```
 
-Na saída, mostre o título alterado, a correção do recurso `File_line` e o
-retorno do título original. A última execução deve terminar sem alterações.
-O modo `--test` retorna **2** quando há correção bem-sucedida e **0** quando
-o nó já está no estado desejado. O Nginx serve o HTML atualizado sem reinício.
+Na segunda consulta, espere `<h1>Desvio manual</h1>`. **Faça uma pausa aqui.** Pergunte “Onde eu fiz a mudança? Qual título continua declarado no manifesto?” O arquivo dentro de `gerenciado-01` mudou. O manifesto continua declarando o título original. Essa diferença é o **desvio de configuração** (*configuration drift*).
 
-## 4. Encerrar
+Agora reaplique e compare.
 
-Revise o plano de destruição e use as mesmas credenciais e o mesmo state.
+```bash
+sudo puppet agent --test
+echo "Código do Puppet: $?"
+curl -fsS http://localhost/
+```
+
+Mostre no log a alteração do recurso `File_line[titulo da pagina Nginx]`, o código **2** e o retorno de `<h1>Servidor gerenciado pelo Puppet</h1>`. O agente encontrou uma linha que corresponde ao padrão de título e restaurou o texto desejado. O Nginx volta a servir o título original na próxima requisição HTTP.
+
+```bash
+sudo puppet agent --test
+echo "Código do Puppet: $?"
+```
+
+Espere código **0** e nenhuma mudança de recurso. Essa é a evidência de **idempotência**: com o estado já conforme, repetir a aplicação preserva o resultado. Se quiser mostrar o alcance da mudança, rode `curl -fsS http://localhost/` em `gerenciado-02`. Ele conservou o título declarado durante o experimento.
+
+> **Fechamento sugerido.** “Terraform criou as EC2. O cloud-init preparou servidor e agentes. Quando alteramos a página em uma máquina, o agente Puppet reaplicou o catálogo e corrigiu o arquivo. Depois disso, rodar novamente só confirmou que o estado já estava correto.”
+
+## 5. Encerrar e conferir a limpeza
+
+De volta ao PowerShell local, revise o plano de destruição. Use o mesmo diretório, perfil, conta, região e state do provisionamento. Quando o plano listar os recursos deste laboratório, aplique-o.
 
 ```powershell
 terraform -chdir=terraform plan -destroy -out=limpeza.tfplan
@@ -121,13 +189,14 @@ terraform -chdir=terraform apply limpeza.tfplan
 terraform -chdir=terraform state list
 ```
 
-Confirme que o state ficou vazio e que as instâncias do laboratório foram
-encerradas. Mantenha credenciais, chave privada, state, planos e o
-`terraform.tfvars` preenchido fora do material distribuído.
+A lista de recursos do state deve ficar vazia. Confira também no console da EC2 se as quatro instâncias do laboratório foram encerradas na região selecionada. Mantenha credenciais, chave privada, state, planos e o `terraform.tfvars` preenchido fora do material distribuído.
 
-## Referências
+## Se o resultado divergir no ensaio
 
-- [Cloud-init — módulos de configuração](https://docs.cloud-init.io/en/latest/reference/modules.html)
-- [Puppet Forge — puppetlabs/stdlib](https://forge.puppet.com/modules/puppetlabs/stdlib)
-- [Puppet — instalação de módulos pela linha de comando](https://help.puppet.com/core/current/content/puppetcore/modules_installing_from_commandline.htm)
-- [Puppet — conexão e assinatura de certificado do agente](https://help.puppet.com/core/current/Content/PuppetCore/agent_primary_server_connections.htm)
+| Sintoma | Onde olhar primeiro |
+|---|---|
+| SSH não conecta | Confirme o IP público da saída `maquinas`, a chave privada correspondente e seu IPv4 atual em `instructor_cidr`. |
+| Cloud-init ainda está rodando ou falhou | Na VM, rode `sudo cloud-init status --long` e `sudo tail -n 80 /var/log/cloud-init-output.log`. No servidor, procure a instalação do Puppet Server e o download do Forge. |
+| A solicitação não aparece no servidor | No agente, rode `getent hosts puppet-server.bacen.test` e confira o IP `10.42.1.10`. No servidor, confira `sudo systemctl is-active puppetserver` e a regra de entrada 8140. |
+| O catálogo falha com erro sobre `file_line` | No servidor, confirme `puppetlabs-stdlib` 9.7.0 com `sudo puppet module list --environment production`. |
+| O título alterado não aparece | No nó em que você rodou o `sed`, leia `/var/www/html/index.html` e confira se a linha tem o formato `<h1>…</h1>`. Faça a consulta HTTP na mesma sessão SSH. |

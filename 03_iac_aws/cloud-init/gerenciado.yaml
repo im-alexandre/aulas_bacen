@@ -14,5 +14,10 @@ write_files:
       server = ${server_name}
       certname = ${certname}
 
+      [agent]
+      runinterval = 7s
+
 runcmd:
-  - [systemctl, mask, --now, puppet.service]
+  - [puppet, config, set, ca_server, "${puppet_server_name}", --section, server]
+  - [sudo, puppet, ssl, bootstrap, --waitforcert, 0]
+  - [systemctl, enable, --now, puppet.service]

@@ -1,0 +1,98 @@
+---
+- name: Preparar o Puppet para manter o Node Exporter em cada VM
+  hosts: monitor_lab
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Aguardar a conexão SSH das instâncias recém-criadas
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    - name: Instalar o Puppet
+      ansible.builtin.apt:
+        name: puppet-agent
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        lock_timeout: 300
+        install_recommends: false
+        policy_rc_d: 101
+
+    - name: Desabilitar o agente cliente-servidor nas VMs da aula
+      ansible.builtin.systemd_service:
+        name: puppet.service
+        state: stopped
+        enabled: false
+
+    - name: Publicar o manifesto que instala e mantém o Node Exporter
+      ansible.builtin.copy:
+        src: prometheus.pp
+        dest: /etc/puppet/bacen-prometheus.pp
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/bin/puppet parser validate %s
+
+    - name: Instalar o serviço e o timer da demonstração
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - bacen-puppet-prometheus.service
+        - bacen-puppet-prometheus.timer
+      register: unidades_puppet
+      tags: [timer]
+
+    - name: Aplicar o manifesto agora em cada nó
+      ansible.builtin.systemd_service:
+        name: bacen-puppet-prometheus.service
+        daemon_reload: true
+        state: started
+
+    - name: Agendar as próximas aplicações do Puppet
+      ansible.builtin.systemd_service:
+        name: bacen-puppet-prometheus.timer
+        daemon_reload: "{{ unidades_puppet.changed }}"
+        enabled: true
+        state: "{{ 'restarted' if unidades_puppet.changed else 'started' }}"
+      tags: [timer]
+
+- name: Atualizar a lista de alvos no coletor central
+  hosts: coletor-prometheus
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Instalar o servidor Prometheus
+      ansible.builtin.apt:
+        name: prometheus
+        state: present
+        install_recommends: false
+        policy_rc_d: 101
+        lock_timeout: 300
+
+    - name: Publicar a configuração gerada com o inventário completo
+      ansible.builtin.template:
+        src: prometheus.yml.j2
+        dest: /etc/prometheus/prometheus.yml
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/bin/promtool check config %s
+      notify: Recarregar a lista de alvos
+
+    - name: Manter o coletor em execução
+      ansible.builtin.systemd_service:
+        name: prometheus
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Recarregar a lista de alvos
+      ansible.builtin.systemd_service:
+        name: prometheus
+        state: reloaded

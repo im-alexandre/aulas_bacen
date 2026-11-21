@@ -51,6 +51,16 @@ resource "aws_vpc_security_group_ingress_rule" "instrutor" {
   to_port           = 22
 }
 
+resource "aws_vpc_security_group_ingress_rule" "site" {
+  for_each = aws_security_group.perfil
+
+  security_group_id = each.value.id
+  cidr_ipv4         = var.instructor_cidr
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+}
+
 resource "aws_vpc_security_group_ingress_rule" "puppet" {
   security_group_id            = aws_security_group.perfil["puppet-server"].id
   referenced_security_group_id = aws_security_group.perfil["gerenciado"].id

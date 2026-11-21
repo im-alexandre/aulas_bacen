@@ -26,6 +26,7 @@ resource "aws_instance" "lab" {
     server_ip   = local.puppet_server_ip
     certname    = "${each.key}.bacen.test"
     manifest    = file("${path.module}/../puppet/site.pp")
+    puppet_server_name = local.puppet_server_name
   }), "\r\n", "\n")
 
   metadata_options {

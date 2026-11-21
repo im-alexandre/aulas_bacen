@@ -1,0 +1,6 @@
+[Unit]
+Description=Aplicar o manifesto Puppet do Node Exporter
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/puppet apply /etc/puppet/bacen-prometheus.pp

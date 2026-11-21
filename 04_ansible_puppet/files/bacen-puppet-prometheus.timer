@@ -1,0 +1,10 @@
+[Unit]
+Description=Reaplicar o manifesto Puppet do Node Exporter periodicamente
+
+[Timer]
+OnActiveSec=60s
+OnUnitInactiveSec=60s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

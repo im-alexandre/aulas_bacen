@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 5s
+  scrape_timeout: 3s
+
+scrape_configs:
+  - job_name: linux
+    static_configs:
+{% for alvo in groups['monitor_lab'] | sort %}
+      - targets: ["{{ '127.0.0.1' if alvo == inventory_hostname else hostvars[alvo].monitor_ip_privado }}:9100"]
+        labels:
+          node: "{{ alvo }}"
+{% endfor %}

@@ -1,0 +1,7 @@
+/inventory.ini
+/terraform/.terraform/
+/terraform/.terraform.lock.hcl
+/terraform/*.tfvars
+!/terraform/terraform.tfvars.example
+/terraform/*.tfstate*
+/terraform/*.tfplan

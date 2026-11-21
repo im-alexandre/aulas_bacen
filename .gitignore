@@ -8,3 +8,5 @@ terraform.tfvars.example
 **ubuntu-24.04-base.qcow2
 **linux_amd64
 **k3s.yaml
+
+03_iac_aws/terraform/variables.tf
